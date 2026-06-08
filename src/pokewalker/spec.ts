@@ -82,16 +82,20 @@ const EnrollDataSpec = Struct({
     'magix': Bytes(8),
 })
 
-const health_data = Struct({
-    'lifetimeTotalSteps': Int32ub,
-    'todaySteps': Int32ub,
-    'lastSyncTime': Int32ub,
-    'totalDays': Int16ub,
-    'curWatts': Int16ub,
-    'unk0': Int16ub,
-    'unk2': Int16ub,
-    'padding': Bytes(3),
-    'settings': Int8u,
+// Persisted session-save block (24 bytes). Mirrors the in-RAM
+// session_save_block byte-for-byte; written via the reliable-save
+// path (primary + backup + checksum).
+const save_block = Struct({
+    'lifetimeSteps': Int32ub,        // cumulative steps, never reset
+    'walkSessionSteps': Int32ub,     // steps in current walk session; zeroed at walk start
+    'rtcTime': Int32ub,              // persisted RTC value; slaved from peer during IR sync
+    'dayCounter': Int16ub,           // increments at midnight; drives daily-reset logic
+    'curWatts': Int16ub,             // current watts balance (currency for items/battle)
+    'sessionTicksElapsed': Int16ub,  // ticks within current session (~minute-scale)
+    'stepWattCounter': Int8u,        // fractional-watt accumulator (1 watt per N steps)
+    'peerSlotIndex': Int8u,          // rotating index into the peer-log EEPROM ring
+    'peerSlotIndexTail': Bytes(3),   // reserved as part of a u32 with peerSlotIndex; tail unused
+    'settings': Int8u,               // packed: bit0=mute, bit1-3=volume, bit4-7=contrast (TBD)
 })
 
 const copy_marker = Bytes(1)
@@ -216,10 +220,19 @@ const special_route = Struct({
     'itemNameImg': Bytes(0x180),
 })
 
-const random_check_info = Struct({
-    'adrOfst': Int16ul,
-    'numBytes': Int8u,
-    'sum': Int8u,
+// Directory entry for one UI sound effect. Indexed by the SND_* enum
+// used by the walker firmware (e.g. SND_CONFIRM, SND_FANFARE,
+// SND_BATTLE_START). `offset` is into the sound data pool that
+// immediately follows the directory. The walker validates `checksum`
+// (sum of the referenced sample bytes) before playing. Sample length
+// is capped at 0xC0 bytes; any longer entry is silently dropped.
+//
+// (Dmitry's article called this region "random checksum descriptor
+// addrs" — that interpretation was incorrect; it's the sound engine.)
+const sound_sample_entry = Struct({
+    'offset': Int16ub,   // BE; offset into soundDataPool
+    'length': Int8u,     // sample length in bytes (≤0xC0)
+    'checksum': Int8u,   // sum of all sample bytes
 })
 
 const item_data = Struct({ 'item': Item, 'unused': Int16ul })
@@ -233,8 +246,8 @@ const important_data = Struct({
     'lcdReliable': Bytes(1),
     'identity': IdentitySpec,
     'identityReliable': Bytes(1),
-    'health': health_data,
-    'healthReliable': Bytes(1),
+    'saveBlock': save_block,
+    'saveBlockReliable': Bytes(1),
     'copy': copy_marker,
     'copyReliable': Bytes(1),
     'padding': Bytes(0xF),
@@ -408,15 +421,19 @@ export const SpritesSpec = Struct({
 
 export const format = Struct({
     'nintendo': FixedLengthString(8),
-    'unk1': Bytes(8),
+    'boardInfo': Bytes(8),       // factory-provisioning metadata (serial / mfg date?);
+                                  // written by IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE,
+                                  // never read by walker firmware
     'unk2': Bytes(98),
     'numResets': Int8u,
     '???': Bytes(13),
     'important1': important_data,
     'important2': important_data,
     'sprites': SpritesSpec,
-    '???2': Bytes(64),
-    'randomCheck': Bytes(592),
+    '???2': Bytes(64),            // 64-byte gap between sprites and sound directory
+    'soundDirectory': BArray(16, sound_sample_entry),  // 64 B; 16× UI sound-effect entries
+                                  //   (SND_CONFIRM, SND_FANFARE, SND_BATTLE_START, etc.)
+    'soundDataPool': Bytes(528),  // packed note-sequence data referenced by soundDirectory
     'routeInfo': route_info,
     'areaSprite': Sprite(32, 24),
     'areaNameSprite': Sprite(80, 16),
