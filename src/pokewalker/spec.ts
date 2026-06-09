@@ -481,39 +481,41 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFF7 (0x900 B): cache of 6 received-item name images.
-    // Each image is fixed-width 96x16 = 0x180 B, matching the standard
-    // item-name sprite format used at EEPROM_ROUTE_ITEM_NAMES (0xA8BE)
-    // and EEPROM_SROUTE_ITEM_NAME (0xCA3C). Verified by comparing the
-    // pokéball-icon prefix's sub-offset distribution: in both this
-    // region and the confirmed 0xA8BE region, the icon appears at
-    // variable sub-offsets within each 0x180 slot (different text
-    // layouts), but the slots themselves are uniform 0x180.
+    // 0xF6F8..0xFFF7 (0x900 B): cache of received-item name images.
+    // Empirically verified to contain real item names ("Leppa berry"
+    // etc.) with language-localized glyphs (English on US dumps,
+    // kana/kanji on jp_eep.bin).
     //
-    // Empirically these are real item names ("Leppa berry" etc.) with
-    // language-localized glyphs (English on US dumps, kana/kanji on
-    // jp_eep.bin).
+    // EXACT LAYOUT TBD. Rendering this region as BArray(6, Sprite(96,
+    // 16)) starting at 0xF6F8 shows text bleeding from one slot into
+    // the next, even though 6 × 0x180 = 0x900 bytes adds up to the
+    // available space. Possible explanations being investigated:
+    //   - Items are 96x16 but the cache start offset isn't 0xF6F8 —
+    //     could begin earlier inside what's currently labeled
+    //     peerPlayData, or later (e.g. 0xF700 after an 8-byte gap).
+    //   - Items are a different size (80x16 = 0x140, or compact 96x8
+    //     row strips at 0xC0 each) packed without strict alignment.
+    //   - The cache includes variable-length records (icon + name) so
+    //     fixed-stride decoding misaligns.
     //
-    // Why a separate cache exists: peer-play gifted items get logged
+    // Why a separate cache likely exists: peer-play gifted items go
     // into EEPROM_PEER_GIFT_ITEMS at 0xCEC8 (10 slots × {u16 item_id,
     // u16 unused}). The item IDs reference items from the LOCAL
-    // walker's route — read from EEPROM_ROUTE_INFO.route_items at the
-    // time of the gift via save_get_dowsing_item_id. But when the
-    // walker switches to a new route on the next walk session,
+    // walker's current route via save_get_dowsing_item_id. When the
+    // walker switches routes between walk sessions,
     // EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets overwritten with the new
-    // route's name images. The walker preserves a snapshot of each
-    // gifted item's rendered name image here, surviving route changes
-    // that would otherwise lose the names. The inventory / gift-history
-    // view can then still display them correctly.
+    // route's name images — so to keep displaying gifts received on
+    // previous routes, the walker (or DS) needs to preserve copies of
+    // each gifted item's rendered name image somewhere route-stable.
+    // This region is the natural candidate.
     //
-    // 6 entries (fewer than the 10 peer-gift slots) suggests either
-    // only the most recent 6 are cached or some gifts share a name and
-    // dedupe.
+    // Walker firmware in pw_firm doesn't read this region in any
+    // decompiled path — the consumer is likely either DS-side or in a
+    // not-yet-decoded walker UI path.
     //
-    // Walker firmware in pw_firm doesn't currently read this region in
-    // any decompiled path; the inventory / gift-history viewer would
-    // be the natural consumer.
-    'giftedItemNameImageCache': BArray(6, Sprite(96, 16)),
+    // Modeled here as a single byte blob until the slot layout is
+    // nailed down empirically.
+    'giftedItemNameImageCache': Bytes(0x900),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
