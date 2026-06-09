@@ -467,10 +467,11 @@ const soundEngine = Struct({
     'soundDataPool': Bytes(528),  // packed note-sequence data referenced by soundDirectory
 })
 
-// 0x8F00..0xB7BD: the current-route asset bundle — RouteInfo struct
+// 0x8F00..0xB7FF: the current-route asset bundle — RouteInfo struct
 // followed by all the rendered sprites the walker needs to display
 // the walking pokémon, the route's available pokémon, and the route's
-// item names. Refreshed whenever the walker starts a new route.
+// item names. Refreshed whenever the walker starts a new route. The
+// trailing 66 zero bytes are padding before the specials bitfield.
 const currentRoute = Struct({
     'routeInfo': route_info,
     'areaSprite': Sprite(32, 24),
@@ -482,14 +483,14 @@ const currentRoute = Struct({
     'joinPokeAnimatedSprite': BArray(2, Sprite(64, 48)),
     'routePokeNameSprites': BArray(3, Sprite(80, 16)),
     'itemNameSprites': BArray(10, Sprite(96, 16)),
+    '_pad_0xB7BE': Bytes(66),    // zero padding before specials bitfield
 })
 
-// 0xB7BE..0xBEFF: received-specials region — bitfield byte at 0xB800
+// 0xB800..0xBEFF: received-specials region — bitfield byte at 0xB800
 // flagging which event/special items have been received, plus the
 // raw "special map" data block and the event-stuff (event poke +
 // event item images).
 const receivedSpecials = Struct({
-    '_pad_0xB7BE': Bytes(66),    // zero padding before specials bitfield
     'receivedSet': Bytes(1),     // 0xB800: specials bitfield (stamps, special map,
                                  // event poke held, event item held, special route)
     '_pad_0xB801': Bytes(3),
@@ -501,18 +502,17 @@ const receivedSpecials = Struct({
     '_pad_0xBEC8': Bytes(56),
 })
 
-// 0xCBBC..0xCE7F: our team for trainer-house battles + trailing pads.
+// 0xCC00..0xCE7F: our team for trainer-house battles + trailing pads.
 const ourTeam = Struct({
-    '_pad_0xCBBC': Bytes(68),
     'team': team_data,
     '_pad_0xCE24': Bytes(0x5C),
+    '_pad_0xCE80': Bytes(8),
 })
 
-// 0xCE80..0xCF0B (140 B): per-session bookkeeping — STARF flag,
+// 0xCE88..0xCF0B (132 B): per-session bookkeeping — STARF flag,
 // current-watts mirror, caught pokémon, dowsed items, gifted items,
 // daily step history.
 const bookkeeping = Struct({
-    '_pad_0xCE80': Bytes(8),
     'giveStarf': Int8u,
     '_pad_0xCE89': Bytes(1),
     'wattsForRemote': Int16ub,
@@ -522,10 +522,9 @@ const bookkeeping = Struct({
     'stepsHistory': BArray(7, Int32ub),
 })
 
-// 0xDBCC..0xF38B: peer-play state — current peer's team_data at
+// 0xDC00..0xF38B: peer-play state — current peer's team_data at
 // 0xDC00, and a 10-entry "peers we've met" ring at 0xDE24.
 const peerData = Struct({
-    '_pad_0xDBCC': Bytes(0x34),
     'peer': team_data,
     'metPeers': BArray(10, team_data),
 })
@@ -538,9 +537,11 @@ export const format = Struct({
     'currentRoute': currentRoute,
     'receivedSpecials': receivedSpecials,
     'specialRoute': special_route,
+    '_pad_0xCBBC': Bytes(68),    // between specialRoute and ourTeam
     'ourTeam': ourTeam,
     'bookkeeping': bookkeeping,
     'eventLog': BArray(24, event_log_item),
+    '_pad_0xDBCC': Bytes(0x34),  // between eventLog and peerData
     'peerData': peerData,
     // 0xF38C..0xFFFF (3188 B / 0xC74): tail of the scenario backup
     // region. Conceptually mirrors source 0xAB8C..0xB7FF (the second
