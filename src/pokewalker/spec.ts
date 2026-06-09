@@ -477,5 +477,23 @@ export const format = Struct({
     'peer': team_data,
     'metPeers': BArray(10, team_data),
     'unused6': Bytes(116),
-    'peerPlayData': Bytes(760)
+    'peerPlayData': Bytes(760),  // 0xF400..0xF6F7: peer-play poke sprite cache (0x180 B)
+                                  // + peer-play poke name image (0x140 B) + PeerPlayData
+                                  // struct (0x38 B). Split into sub-fields next.
+
+    // 0xF6F8..0xFFFF (0x908 B): cache of 6 rendered display images, each
+    // 0x180 bytes — a 32x24 icon-and-text sprite plus an alternate frame /
+    // detail block. Layout determined empirically by decoding multiple
+    // walker dumps: every record contains a small icon at the top and a
+    // text strip near the bottom; content varies per walker (mutable
+    // state). Likely a per-event LCD blit cache (the walker pre-renders
+    // each event-log entry's row image so the display can blit it
+    // directly without re-layout).
+    //
+    // Decoding each record as Sprite(32, 24) renders the icon-and-text
+    // image; the second 192 bytes per record probably hold the alternate
+    // animation frame or additional detail bytes.
+    'recentEventDisplayCache': BArray(6, BArray(2, Sprite(32, 24))),
+    // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
+    'trailingPadding': Bytes(8),
 })
