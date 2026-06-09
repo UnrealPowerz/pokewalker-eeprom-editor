@@ -481,41 +481,39 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFF7 (0x900 B): historical cache of received-item name
-    // images. Empirically verified to contain real item names (e.g.
-    // "Leppa berry") with language-localized glyphs (English on US
-    // dumps, kana/kanji on jp_eep.bin).
+    // 0xF6F8..0xFFF7 (0x900 B): cache of 6 received-item name images.
+    // Each image is fixed-width 96x16 = 0x180 B, matching the standard
+    // item-name sprite format used at EEPROM_ROUTE_ITEM_NAMES (0xA8BE)
+    // and EEPROM_SROUTE_ITEM_NAME (0xCA3C). Verified by comparing the
+    // pokéball-icon prefix's sub-offset distribution: in both this
+    // region and the confirmed 0xA8BE region, the icon appears at
+    // variable sub-offsets within each 0x180 slot (different text
+    // layouts), but the slots themselves are uniform 0x180.
     //
-    // Each image is either 80x16 (0x140 B) or 96x16 (0x180 B) depending
-    // on text width — packed irregularly, NOT aligned to a fixed stride.
-    // The pokéball-icon byte prefix `e0 e0 20 e0 20 60 c0 e0` repeats
-    // at deltas of 0x180 / 0x140 / small sub-icon offsets, confirming
-    // variable-width packing.
+    // Empirically these are real item names ("Leppa berry" etc.) with
+    // language-localized glyphs (English on US dumps, kana/kanji on
+    // jp_eep.bin).
     //
     // Why a separate cache exists: peer-play gifted items get logged
     // into EEPROM_PEER_GIFT_ITEMS at 0xCEC8 (10 slots × {u16 item_id,
     // u16 unused}). The item IDs reference items from the LOCAL
-    // walker's route — i.e. from EEPROM_ROUTE_INFO.route_items at the
-    // time of the gift. But when the walker switches to a new route on
-    // the next walk session, EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets
-    // overwritten with the new route's item name images. To still
-    // display old peer-gifted items in an inventory / history view,
-    // the walker preserves a SEPARATE copy of each gifted item's name
-    // image here — surviving route changes that would otherwise lose
-    // the names.
+    // walker's route — read from EEPROM_ROUTE_INFO.route_items at the
+    // time of the gift via save_get_dowsing_item_id. But when the
+    // walker switches to a new route on the next walk session,
+    // EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets overwritten with the new
+    // route's name images. The walker preserves a snapshot of each
+    // gifted item's rendered name image here, surviving route changes
+    // that would otherwise lose the names. The inventory / gift-history
+    // view can then still display them correctly.
     //
-    // ~6 entries fit at ~0x180 each — consistent with caching only the
-    // most recent N of the 10 possible peer-gift slots (oldest evicted
-    // when the cache fills).
+    // 6 entries (fewer than the 10 peer-gift slots) suggests either
+    // only the most recent 6 are cached or some gifts share a name and
+    // dedupe.
     //
     // Walker firmware in pw_firm doesn't currently read this region in
-    // any decompiled path, but the inventory / gift-history viewer
-    // would be the natural consumer.
-    //
-    // Modeled here as a single byte blob; per-item parsing would
-    // require tracking variable widths, easier to do via a custom
-    // viewer than a static struct.
-    'giftedItemNameImageCache': Bytes(0x900),
+    // any decompiled path; the inventory / gift-history viewer would
+    // be the natural consumer.
+    'giftedItemNameImageCache': BArray(6, Sprite(96, 16)),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
