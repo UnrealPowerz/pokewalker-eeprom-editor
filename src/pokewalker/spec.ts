@@ -419,16 +419,20 @@ export const SpritesSpec = Struct({
     switch_txt: Sprite(80, 16),
 })
 
+// Padding / unused / gap regions throughout the EEPROM use the naming
+// scheme `_pad_0x<addr>` where `<addr>` is the start address in hex.
+// These regions are either all-0xFF (never written), all-zero, or
+// otherwise inert in production dumps. Single underscore prefix marks
+// them as "not real data" to make scrolling past them obvious.
 export const format = Struct({
     'nintendo': FixedLengthString(8),
     'boardInfo': Bytes(8),       // factory-provisioning constant (same on all walkers
                                   // including JP — not a per-unit serial). Written by
                                   // IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE, never read
                                   // by walker firmware. Likely a Nintendo product code.
-    'virginRegion1': Bytes(98),  // 0x0010..0x0071: all 0xFF in every production dump
-                                  // checked. Never written by firmware or factory.
+    '_pad_0x0010': Bytes(98),    // all 0xFF in every production dump checked
     'numResets': Int8u,
-    'virginRegion2': Bytes(13),  // 0x0073..0x007F: all 0xFF in production dumps.
+    '_pad_0x0073': Bytes(13),    // all 0xFF in production dumps
     'important1': important_data,
     'important2': important_data,
     'sprites': SpritesSpec,
@@ -449,65 +453,48 @@ export const format = Struct({
     'joinPokeAnimatedSprite': BArray(2, Sprite(64, 48)),
     'routePokeNameSprites': BArray(3, Sprite(80, 16)),
     'itemNameSprites': BArray(10, Sprite(96, 16)),
-    'paddingPreSpecials': Bytes(66), // 0xB7BE..0xB7FF: zero padding (verified all-zero
-                                     // across production dumps).
-    'receivedSet': Bytes(1),         // 0xB800: specials bitfield (stamps, special map,
-                                     // event poke held, event item held, special route)
-    'unused3': Bytes(3),
-    'specialMap': Bytes(576),        // 0xB804..0xBA43: "special map data" per dmitry.
-                                     // All zero on every production dump we checked —
-                                     // feature exists in firmware but appears to have
-                                     // never been used by any DS-side distribution.
+    '_pad_0xB7BE': Bytes(66),    // zero padding before specials bitfield
+    'receivedSet': Bytes(1),     // 0xB800: specials bitfield (stamps, special map,
+                                 // event poke held, event item held, special route)
+    '_pad_0xB801': Bytes(3),
+    'specialMap': Bytes(576),    // 0xB804..0xBA43: "special map data" per dmitry.
+                                 // All zero on every production dump we checked —
+                                 // feature exists in firmware but appears to have
+                                 // never been used by any DS-side distribution.
     'eventstuff': Bytes(1156),
-    'unused5': Bytes(56),
+    '_pad_0xBEC8': Bytes(56),
     'specialRoute': special_route,
-    'unused4': Bytes(68),
+    '_pad_0xCBBC': Bytes(68),
     'team': team_data,
-    'pad1': Bytes(0x5C),
-    'unused': Bytes(8),
+    '_pad_0xCE24': Bytes(0x5C),
+    '_pad_0xCE80': Bytes(8),
     'giveStarf': Int8u,
-    'unused2': Int8u,
+    '_pad_0xCE89': Bytes(1),
     'wattsForRemote': Int16ub,
     'caughtPokes': BArray(3, pokemon_summary),
     'dowsedItems': BArray(3, item_data),
     'giftedItems': BArray(10, item_data),
     'stepsHistory': BArray(7, Int32ub),
     'eventLog': BArray(24, event_log_item),
-    'padd': Bytes(0x34),
+    '_pad_0xDBCC': Bytes(0x34),
     'peer': team_data,
     'metPeers': BArray(10, team_data),
-    'unused6': Bytes(50),     // 0xF38C..0xF3BD (50 B)
-    // 0xF3BE..0xFFBD (0xC00 B): EXACT byte-for-byte duplicate of route
-    // item names 2..9 (the last 8 of 10).
+    // 0xF38C..0xFFFF (3188 B / 0xC74): tail of the scenario backup
+    // region. Conceptually mirrors source 0xAB8C..0xB7FF (the second
+    // half of route item-name sprites + their trailing zero padding),
+    // copied here at walk start. Across all five dumps in public/
+    // (US/EU/JP/wiped) this region contains a byte-for-byte duplicate
+    // of route items 2..9 starting at offset +0x32 (= 0xF3BE absolute),
+    // followed by 66 bytes of zero padding mirroring 0xB7BE..0xB7FF.
     //
-    // Verified empirically: across all five dumps in public/ (US, EU,
-    // JP, and a wiped half-dump) the bytes here are identical to the
-    // primary `itemNameSprites[2..9]` at 0xABBE..0xB7BD. Not a hash,
-    // not a cache update — a literal copy.
+    // The first ~0x300 bytes (0xF400..0xF6F7) get OVERWRITTEN with
+    // peer-play poke sprite + name + PeerPlayData during a sync
+    // session (verified — pw_firm reads these addresses in gfx.c and
+    // ir_protocol.c). After the sync, walk-start reprovisioning
+    // restores the mirror.
     //
-    // Why the duplication exists is open, but the most likely
-    // explanation is that this is a scratch / pre-rendered display
-    // region that gets temporarily overlaid with peer-play state
-    // during a sync session:
-    //   - dmitry & pw_firm both verify that the walker reads
-    //     0xF400..0xF57F (peer-play poke sprite, gfx.c:822),
-    //     0xF580..0xF6BF (peer-play poke name, gfx.c:502), and
-    //     0xF6C0..0xF6F7 (PeerPlayData, ir_protocol.c) during
-    //     peer-play.
-    //   - All five dumps in public/ are from walkers that haven't
-    //     just done a peer-play session, so they show the
-    //     "default" state: 8 route-item-name duplicates.
-    //   - During/just-after a sync, the DS overwrites the first
-    //     ~0x300 bytes with peer-play sprite/name/PeerPlayData,
-    //     destroying items 0-2 of the duplicate. After the sync
-    //     (possibly at walk start) the duplicate gets reprovisioned.
-    //
-    // For viewers loaded with a "steady-state" dump, this field will
-    // show the same 8 item sprites as the corresponding entries in
-    // the main `itemNameSprites` field — that's the expected
-    // behavior, not a bug. For a dump captured during peer-play, the
-    // first 1-2 entries here will show garbage (peer-play data
-    // re-decoded as sprite pixels).
-    'routeItemNamesDuplicate': BArray(8, Sprite(96, 16)),
-    'trailingPadding': Bytes(66),  // 0xFFBE..0xFFFF (typically zero in dumps)
+    // Defined as raw bytes here; use the sprite-explorer tool at
+    // /sprite-explorer.html to inspect the embedded item-name sprites
+    // (96x16 each, starting at 0xF3BE with 8 entries).
+    'routeAssetsBackupTail': Bytes(0xC74),
 })
