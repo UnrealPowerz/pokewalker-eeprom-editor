@@ -2,8 +2,7 @@ import './app.css'
 import { mount } from 'svelte'
 import App from './App.svelte'
 
-const app = mount(App, {
-  target: document.getElementById('app')!,
-})
+const target = document.getElementById('app')
+if (!target) throw new Error('mount target #app not found')
 
-export default app
+export default mount(App, { target })

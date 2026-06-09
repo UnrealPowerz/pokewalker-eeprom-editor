@@ -1,23 +1,25 @@
 <script lang="ts">
-  import Folder from './lib/Folder.svelte'
-  import { loadEeprom } from './pokewalker/load-eeprom'
-  import FileDrop from './lib/FileDrop.svelte'
+	import Folder from './lib/Folder.svelte';
+	import FileDrop from './lib/FileDrop.svelte';
+	import { loadEeprom } from './pokewalker/load-eeprom';
 
-  let eepromPromise: Promise<any> | null = $state(null);
+	type Eeprom = Awaited<ReturnType<typeof loadEeprom>>;
 
-  const handleFile = (bufferPromise: Promise<ArrayBuffer>) => {
-    eepromPromise = bufferPromise.then(buffer => loadEeprom(buffer))
-  }
+	let eepromPromise = $state<Promise<Eeprom> | null>(null);
+
+	const handleFile = (bufferPromise: Promise<ArrayBuffer>) => {
+		eepromPromise = bufferPromise.then(loadEeprom);
+	};
 </script>
 
-<FileDrop onfile={handleFile}/>
+<FileDrop onfile={handleFile} />
 
 {#if eepromPromise}
-  {#await eepromPromise}
-    <p>...waiting</p>
-  {:then eeprom}
-    <Folder children={eeprom}/>
-  {:catch error}
-    <p style="color: red">{error.message}</p>
-  {/await}
+	{#await eepromPromise}
+		<p>...waiting</p>
+	{:then eeprom}
+		<Folder data={eeprom as unknown as Record<string, unknown>} />
+	{:catch error}
+		<p style="color: red">{error.message}</p>
+	{/await}
 {/if}

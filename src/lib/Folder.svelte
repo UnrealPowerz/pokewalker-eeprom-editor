@@ -1,15 +1,18 @@
 <script lang="ts">
 	import Entry from './Entry.svelte';
 
-	let { children }: { children: Object } = $props();
+	interface Props {
+		data: Record<string, unknown>;
+	}
+	let { data }: Props = $props();
 </script>
 
 <ul>
-    {#each Object.entries(children) as [childName, childValue]}
-        <li>
-            <Entry name={childName} value={childValue}/>
-        </li>
-    {/each}
+	{#each Object.entries(data) as [childName, childValue]}
+		<li>
+			<Entry name={childName} value={childValue} />
+		</li>
+	{/each}
 </ul>
 
 <style>
