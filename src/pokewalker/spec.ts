@@ -426,7 +426,7 @@ export const SpritesSpec = Struct({
 // them as "not real data" to make scrolling past them obvious.
 export const format = Struct({
     'nintendo': FixedLengthString(8),
-    'boardInfo': Bytes(8),       // factory-provisioning constant (same on all walkers
+    '_pad_0x0008': Bytes(8),     // factory-provisioning constant (same on all walkers
                                   // including JP — not a per-unit serial). Written by
                                   // IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE, never read
                                   // by walker firmware. Likely a Nintendo product code.
