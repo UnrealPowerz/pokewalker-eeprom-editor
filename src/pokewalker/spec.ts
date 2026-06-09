@@ -481,25 +481,38 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFF7 (0x900 B): cached rendered item name images, with
+    // 0xF6F8..0xFFF7 (0x900 B): cached rendered name images, with
     // language-localized glyphs (English-style on US dumps, kana/kanji on
-    // jp_eep.bin). Each item's name image is either 80x16 (0x140 B) or
-    // 96x16 (0x180 B) depending on text width — items are packed
-    // irregularly, NOT aligned to a fixed stride. The pokéball-icon byte
-    // prefix `e0 e0 20 e0 20 60 c0 e0` repeats at deltas of 0x180 / 0x140
-    // / small sub-icon offsets, confirming variable-width packing.
+    // jp_eep.bin). Each name image is either 80x16 (0x140 B) or 96x16
+    // (0x180 B) depending on text width — packed irregularly, NOT aligned
+    // to a fixed stride. The pokéball-icon byte prefix
+    // `e0 e0 20 e0 20 60 c0 e0` repeats at deltas of 0x180 / 0x140 /
+    // small sub-icon offsets, confirming variable-width packing.
     //
-    // Walker firmware never reads or writes this region (verified by grep
-    // of pw_firm decompilation). Only DS-side code can populate it, via
-    // the generic IR_CMD_EEPROM_WRITE_* commands. Probably the rendered
-    // name images for items received in recent peer-play sessions; the
-    // walker would only need them if a related UI feature got cut, or
-    // they exist for the DS to read back when displaying gifted items.
+    // Most plausible interpretation: cached name images for the peer's
+    // 6-pokémon team, transmitted during peer-play sync. Reasoning:
+    //   - the `e0 e0 20 e0 20 60 c0 e0` byte prefix is the pokéball
+    //     glyph used to prefix POKEMON names (item names use a different
+    //     item_symbol icon)
+    //   - exactly 6 records matches a Pokémon party size (TeamData
+    //     contains 6× PokeSpec)
+    //   - variable widths match user-set pokémon nicknames
+    //   - region is mutable per-walker — depends on whom you've battled
     //
-    // Modeled here as a single byte blob; per-item parsing would require
-    // tracking variable widths, easier to do via a custom viewer than a
-    // static struct.
-    'itemNameImageCache': Bytes(0x900),
+    // The peer pre-renders all 6 of its team's name images during sync
+    // because the walker can't render arbitrary pokémon nicknames
+    // dynamically (no embedded font engine for that). The images likely
+    // exist either for the DS-side trainer-house feature to read back,
+    // or for a cut walker-side "review peer's team" UI.
+    //
+    // Walker firmware never reads or writes this region (verified by
+    // grep of pw_firm decompilation). Only DS-side code can populate
+    // it via the generic IR_CMD_EEPROM_WRITE_* commands.
+    //
+    // Modeled here as a single byte blob; per-item parsing would
+    // require tracking variable widths, easier to do via a custom
+    // viewer than a static struct.
+    'peerTeamNameImageCache': Bytes(0x900),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
