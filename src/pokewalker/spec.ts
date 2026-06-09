@@ -481,20 +481,25 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFFF (0x908 B): 6 records of 0x180 bytes each. Empirically
-    // determined by decoding multiple walker dumps — each record contains
-    // a small icon + a rendered text strip when decoded as 32x24, with
-    // language-localized glyphs (English in US dumps, kana/kanji in JP).
+    // 0xF6F8..0xFFF7 (0x900 B): cached rendered item name images, with
+    // language-localized glyphs (English-style on US dumps, kana/kanji on
+    // jp_eep.bin). Each item's name image is either 80x16 (0x140 B) or
+    // 96x16 (0x180 B) depending on text width — items are packed
+    // irregularly, NOT aligned to a fixed stride. The pokéball-icon byte
+    // prefix `e0 e0 20 e0 20 60 c0 e0` repeats at deltas of 0x180 / 0x140
+    // / small sub-icon offsets, confirming variable-width packing.
     //
-    // PURPOSE UNKNOWN. Walker firmware never reads OR writes this region
-    // (verified by grep of pw_firm decompilation). Only DS-side code can
-    // touch it via the generic IR_CMD_EEPROM_WRITE_* commands. Best guess
-    // is that the DS-side game (HG/SS) writes recent-interaction display
-    // images here for the trainer-house feature, but this hasn't been
-    // verified against the DS disassembly. Render as 32x24x2 animated
-    // sprites here so the editor at least shows the content; rename if
-    // the actual purpose is identified.
-    'unknownDsCache': BArray(6, BArray(2, Sprite(32, 24))),
+    // Walker firmware never reads or writes this region (verified by grep
+    // of pw_firm decompilation). Only DS-side code can populate it, via
+    // the generic IR_CMD_EEPROM_WRITE_* commands. Probably the rendered
+    // name images for items received in recent peer-play sessions; the
+    // walker would only need them if a related UI feature got cut, or
+    // they exist for the DS to read back when displaying gifted items.
+    //
+    // Modeled here as a single byte blob; per-item parsing would require
+    // tracking variable widths, easier to do via a custom viewer than a
+    // static struct.
+    'itemNameImageCache': Bytes(0x900),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
