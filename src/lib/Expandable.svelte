@@ -1,23 +1,25 @@
-<svelte:options immutable={true}/>
 <script lang="ts">
-	export let expanded = false;
+	import type { Snippet } from 'svelte';
+
+	let { header, body }: { header?: Snippet, body?: Snippet } = $props();
+	let expanded = $state(false);
 
 	const toggle = () => {
 		expanded = !expanded;
 	}
 </script>
 
-<button class:expanded on:click={toggle}>
+<button class:expanded onclick={toggle}>
     {#if expanded}
     <span class="material-symbols-outlined">expand_more</span>
     {:else}
     <span class="material-symbols-outlined">chevron_right</span>
     {/if}
-    <slot name="name"/>
+    {@render header?.()}
 </button>
 
 {#if expanded}
-	<slot name="content"/>
+	{@render body?.()}
 {/if}
 
 <style>

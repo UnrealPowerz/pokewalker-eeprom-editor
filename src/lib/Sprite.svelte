@@ -2,11 +2,9 @@
     import { onMount } from "svelte";
     import { decodeSprite } from "../pokewalker/decode-sprite";
 
-    export let data: ArrayBuffer
-    export let width: number
-    export let height: number
+    let { data, width, height }: { data: ArrayBuffer, width: number, height: number } = $props();
 
-    let canvas: HTMLCanvasElement
+    let canvas: HTMLCanvasElement;
 
     onMount(() => {
         canvas.width = width

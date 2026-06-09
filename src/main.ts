@@ -1,16 +1,9 @@
 import './app.css'
+import { mount } from 'svelte'
 import App from './App.svelte'
-import { loadRom } from './nds/load-rom';
 
-const app = new App({
+const app = mount(App, {
   target: document.getElementById('app')!,
 })
-
-;(async () => {
-  const resp = await fetch('/PokemonSS_EU.nds')
-  const data = await resp.arrayBuffer()
-  
-  loadRom(data)
-})()
 
 export default app

@@ -5,11 +5,10 @@
     import Folder from "./Folder.svelte";
     import HexView from "./HexView.svelte";
 
-	export let name: string;
-    export let value: unknown;
+    let { name, value }: { name: string, value: unknown } = $props();
 
-    let displayValue = typeof value === 'object' && value != null && '_data' in value ? value._data : value
-    let annotate = typeof value === 'object' && value != null && '_annotate' in value ? value._annotate : undefined
+    const displayValue = $derived(typeof value === 'object' && value != null && '_data' in value ? value._data : value);
+    const annotate = $derived(typeof value === 'object' && value != null && '_annotate' in value ? value._annotate : undefined);
 
     const isSprite = (v: Object): v is ReturnType<ReturnType<typeof SpriteSpec>['read']> =>
         '_type' in v && v._type === 'sprite'
@@ -31,25 +30,25 @@
         return '{}'
     }
 
-    const icon = getIconForEntry(displayValue)
+    const icon = $derived(getIconForEntry(displayValue));
 </script>
 
 {#if displayValue == null || typeof displayValue !== 'object'}
-<span class="type">{@html icon }</span><span class="name">{name}</span> = <span>{JSON.stringify(displayValue)} {#if annotate != null}({annotate}){/if}</span>
+<span class="type">{@html icon}</span><span class="name">{name}</span> = <span>{JSON.stringify(displayValue)} {#if annotate != null}({annotate}){/if}</span>
 {:else}
 <Expandable>
-    <svelte:fragment slot="name">
-        <span class="type">{@html icon }</span><span class="name">{name} {#if annotate != null} ({annotate}){/if}</span>
-    </svelte:fragment>
-    <svelte:fragment slot="content">
+    {#snippet header()}
+        <span class="type">{@html icon}</span><span class="name">{name} {#if annotate != null} ({annotate}){/if}</span>
+    {/snippet}
+    {#snippet body()}
         {#if isSprite(displayValue)}
-        <Sprite data={displayValue.data.buffer} width={displayValue._width} height={displayValue._height}/>
+        <Sprite data={displayValue.data.buffer as ArrayBuffer} width={displayValue._width} height={displayValue._height}/>
         {:else if displayValue instanceof Uint8Array}
-        <HexView data={displayValue.buffer}/>
+        <HexView data={displayValue.buffer as ArrayBuffer}/>
         {:else}
         <Folder children={displayValue}/>
         {/if}
-    </svelte:fragment>
+    {/snippet}
 </Expandable>
 {/if}
 

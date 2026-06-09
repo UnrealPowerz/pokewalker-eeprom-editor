@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    type Props = {
+        onfile: (bufferPromise: Promise<ArrayBuffer>) => void;
+    }
 
-    export let overlay = true
+    let { onfile }: Props = $props();
+    let overlay = $state(true);
 
-	const dispatch = createEventDispatcher();
-
-    function readFile(file: any) {
+    function readFile(file: File): Promise<ArrayBuffer> {
         return new Promise(r => {
             const reader = new FileReader()
             reader.onload = (evt: ProgressEvent<FileReader>) => {
@@ -19,42 +20,40 @@
         ev.preventDefault();
     }
 
-
-    function dragEventGetFiles(ev: DragEvent) {
+    function dragEventGetFiles(ev: DragEvent): (File | null)[] {
         if (ev.dataTransfer!.items) {
             return [...ev.dataTransfer!.items]
                 .filter(item => item.kind === 'file')
                 .map(item => item.getAsFile())
-    } else {
-        return [...ev.dataTransfer!.files]
-    }
+        } else {
+            return [...ev.dataTransfer!.files]
+        }
     }
 
     function dropHandler(ev: DragEvent) {
         ev.preventDefault();
-
         const files = dragEventGetFiles(ev)
-        if (files.length === 1) {
+        if (files.length === 1 && files[0]) {
             fileSelected(files[0])
         }
     }
 
     function browseFile(evt: Event) {
-        const files = (evt.target as any).files
-        if (files.length === 1) {
+        const files = (evt.target as HTMLInputElement).files
+        if (files && files.length === 1) {
             fileSelected(files[0])
         }
     }
 
-    function fileSelected(file: any) {
+    function fileSelected(file: File) {
         overlay = false
-        dispatch('file', readFile(file))
+        onfile(readFile(file))
     }
 
     async function loadFromWeb() {
         overlay = false
         const file = await fetch('https://raw.githubusercontent.com/mamba2410/reverse-pokewalker/master/dumps/bin/64k-full-rom.bin')
-        dispatch('file', file.arrayBuffer())
+        onfile(file.arrayBuffer())
     }
 </script>
 
@@ -63,15 +62,15 @@
     <div id="overlay-box">
         <p>Drag &amp; drop EEPROM image here</p>
         <p>OR</p>
-        <input type="file" on:change={browseFile}>
+        <input type="file" onchange={browseFile}>
         <p>OR</p>
-        <button on:click={loadFromWeb}>Load mamba2410's EEPROM image from GitHub</button>
+        <button onclick={loadFromWeb}>Load mamba2410's EEPROM image from GitHub</button>
         <p><a href="https://github.com/mamba2410/reverse-pokewalker/blob/master/dumps/bin/64k-full-rom.bin">(this one)</a></p>
     </div>
 </div>
 {/if}
 
-<svelte:body on:drop={dropHandler} on:dragover={dragOverHandler}/>
+<svelte:body ondrop={dropHandler} ondragover={dragOverHandler}/>
 
 <style>
     #overlay {

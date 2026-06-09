@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Entry from './Entry.svelte';
 
-	export let children: Object;
+	let { children }: { children: Object } = $props();
 </script>
 
 <ul>

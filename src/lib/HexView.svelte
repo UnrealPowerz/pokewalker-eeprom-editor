@@ -1,6 +1,5 @@
-<svelte:options immutable={true}/>
 <script lang="ts">
-    export let data: ArrayBuffer
+    let { data }: { data: ArrayBuffer } = $props();
 
     const chunked = <T>(array: T[], chunkSize: number): T[][] => {
         const chunkedArray:T[][] = []
@@ -24,20 +23,20 @@
     }
     
 
-    const hex = chunked(
+    const hex = $derived(chunked(
         [...new Uint8Array(data)]
             .map(x => x.toString(16).padStart(2, '0')),
         16
-    )
+    ));
 
-    const all: number | undefined = allTheSame(new Uint8Array(data))
-    
+    const all: number | undefined = $derived(allTheSame(new Uint8Array(data)));
 </script>
 
 <div>
 {data.byteLength} bytes {#if all != null} (all 0x{ all.toString(16).padStart(2, '0')}){/if}
 </div>
 <table class="view">
+    <tbody>
     {#each hex as bytes, i}
     <tr>
         <td class="offset">{(i * 16).toString(16).padStart(6, '0')}</td>
@@ -46,6 +45,7 @@
         {/each}
     </tr>
     {/each}
+    </tbody>
 </table>
 
 <style>
