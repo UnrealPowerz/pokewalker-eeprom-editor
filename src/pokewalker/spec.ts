@@ -481,19 +481,20 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFFF (0x908 B): cache of 6 rendered display images, each
-    // 0x180 bytes — a 32x24 icon-and-text sprite plus an alternate frame /
-    // detail block. Layout determined empirically by decoding multiple
-    // walker dumps: every record contains a small icon at the top and a
-    // text strip near the bottom; content varies per walker (mutable
-    // state). Likely a per-event LCD blit cache (the walker pre-renders
-    // each event-log entry's row image so the display can blit it
-    // directly without re-layout).
+    // 0xF6F8..0xFFFF (0x908 B): 6 records of 0x180 bytes each. Empirically
+    // determined by decoding multiple walker dumps — each record contains
+    // a small icon + a rendered text strip when decoded as 32x24, with
+    // language-localized glyphs (English in US dumps, kana/kanji in JP).
     //
-    // Decoding each record as Sprite(32, 24) renders the icon-and-text
-    // image; the second 192 bytes per record probably hold the alternate
-    // animation frame or additional detail bytes.
-    'recentEventDisplayCache': BArray(6, BArray(2, Sprite(32, 24))),
+    // PURPOSE UNKNOWN. Walker firmware never reads OR writes this region
+    // (verified by grep of pw_firm decompilation). Only DS-side code can
+    // touch it via the generic IR_CMD_EEPROM_WRITE_* commands. Best guess
+    // is that the DS-side game (HG/SS) writes recent-interaction display
+    // images here for the trainer-house feature, but this hasn't been
+    // verified against the DS disassembly. Render as 32x24x2 animated
+    // sprites here so the editor at least shows the content; rename if
+    // the actual purpose is identified.
+    'unknownDsCache': BArray(6, BArray(2, Sprite(32, 24))),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
