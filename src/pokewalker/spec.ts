@@ -481,38 +481,41 @@ export const format = Struct({
                                   // + peer-play poke name image (0x140 B) + PeerPlayData
                                   // struct (0x38 B). Split into sub-fields next.
 
-    // 0xF6F8..0xFFF7 (0x900 B): cached rendered name images, with
-    // language-localized glyphs (English-style on US dumps, kana/kanji on
-    // jp_eep.bin). Each name image is either 80x16 (0x140 B) or 96x16
-    // (0x180 B) depending on text width — packed irregularly, NOT aligned
-    // to a fixed stride. The pokéball-icon byte prefix
-    // `e0 e0 20 e0 20 60 c0 e0` repeats at deltas of 0x180 / 0x140 /
-    // small sub-icon offsets, confirming variable-width packing.
+    // 0xF6F8..0xFFF7 (0x900 B): historical cache of received-item name
+    // images. Empirically verified to contain real item names (e.g.
+    // "Leppa berry") with language-localized glyphs (English on US
+    // dumps, kana/kanji on jp_eep.bin).
     //
-    // Most plausible interpretation: cached name images for the peer's
-    // 6-pokémon team, transmitted during peer-play sync. Reasoning:
-    //   - the `e0 e0 20 e0 20 60 c0 e0` byte prefix is the pokéball
-    //     glyph used to prefix POKEMON names (item names use a different
-    //     item_symbol icon)
-    //   - exactly 6 records matches a Pokémon party size (TeamData
-    //     contains 6× PokeSpec)
-    //   - variable widths match user-set pokémon nicknames
-    //   - region is mutable per-walker — depends on whom you've battled
+    // Each image is either 80x16 (0x140 B) or 96x16 (0x180 B) depending
+    // on text width — packed irregularly, NOT aligned to a fixed stride.
+    // The pokéball-icon byte prefix `e0 e0 20 e0 20 60 c0 e0` repeats
+    // at deltas of 0x180 / 0x140 / small sub-icon offsets, confirming
+    // variable-width packing.
     //
-    // The peer pre-renders all 6 of its team's name images during sync
-    // because the walker can't render arbitrary pokémon nicknames
-    // dynamically (no embedded font engine for that). The images likely
-    // exist either for the DS-side trainer-house feature to read back,
-    // or for a cut walker-side "review peer's team" UI.
+    // Why a separate cache exists: peer-play gifted items get logged
+    // into EEPROM_PEER_GIFT_ITEMS at 0xCEC8 (10 slots × {u16 item_id,
+    // u16 unused}). The item IDs reference items from the LOCAL
+    // walker's route — i.e. from EEPROM_ROUTE_INFO.route_items at the
+    // time of the gift. But when the walker switches to a new route on
+    // the next walk session, EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets
+    // overwritten with the new route's item name images. To still
+    // display old peer-gifted items in an inventory / history view,
+    // the walker preserves a SEPARATE copy of each gifted item's name
+    // image here — surviving route changes that would otherwise lose
+    // the names.
     //
-    // Walker firmware never reads or writes this region (verified by
-    // grep of pw_firm decompilation). Only DS-side code can populate
-    // it via the generic IR_CMD_EEPROM_WRITE_* commands.
+    // ~6 entries fit at ~0x180 each — consistent with caching only the
+    // most recent N of the 10 possible peer-gift slots (oldest evicted
+    // when the cache fills).
+    //
+    // Walker firmware in pw_firm doesn't currently read this region in
+    // any decompiled path, but the inventory / gift-history viewer
+    // would be the natural consumer.
     //
     // Modeled here as a single byte blob; per-item parsing would
     // require tracking variable widths, easier to do via a custom
     // viewer than a static struct.
-    'peerTeamNameImageCache': Bytes(0x900),
+    'giftedItemNameImageCache': Bytes(0x900),
     // 8 trailing bytes (0xFFF8..0xFFFF) — observed as zeros in dumps.
     'trailingPadding': Bytes(8),
 })
