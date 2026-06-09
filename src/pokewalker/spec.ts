@@ -419,12 +419,19 @@ export const SpritesSpec = Struct({
     switch_txt: Sprite(80, 16),
 })
 
+// Top-level format groups fields into semantic regions of the EEPROM.
+// Each group is a Struct/BArray covering a contiguous byte range. The
+// editor UI renders these as collapsible folders, so opening a group
+// brings up just its sub-fields.
+//
 // Padding / unused / gap regions throughout the EEPROM use the naming
 // scheme `_pad_0x<addr>` where `<addr>` is the start address in hex.
 // These regions are either all-0xFF (never written), all-zero, or
 // otherwise inert in production dumps. Single underscore prefix marks
 // them as "not real data" to make scrolling past them obvious.
-export const format = Struct({
+
+// 0x0000..0x007F (128 B): magic + factory signature + watchdog counter.
+const header = Struct({
     'nintendo': FixedLengthString(8),
     'productSignature': Bytes(8), // 0x0008..0x000F: fixed 8-byte Nintendo signature
                                    // (same on every walker checked — US/EU/JP all show
@@ -435,9 +442,22 @@ export const format = Struct({
     '_pad_0x0010': Bytes(98),    // all 0xFF in every production dump checked
     'numResets': Int8u,
     '_pad_0x0073': Bytes(13),    // all 0xFF in production dumps
+})
+
+// 0x0080..0x027F (512 B): reliable save data — primary copy at 0x0080
+// + identical-format backup at 0x0180. Each `important_data` block
+// holds ADC calibration, the unique-identity block, LCD init sequence,
+// trainer identity, health/save block, and the copy marker, each with
+// a one-byte "reliable" checksum trailer.
+const reliableSaves = Struct({
     'important1': important_data,
     'important2': important_data,
-    'sprites': SpritesSpec,
+})
+
+// 0x8C70..0x8EFF (656 B): UI sound effect engine — orphan sprite of
+// unknown purpose at the start, then the 16-entry sound directory and
+// the note-sequence data pool.
+const soundEngine = Struct({
     'orphanSprite': Sprite(32, 8), // 0x8C70..0x8CAF: not referenced by firmware. Looks
                                    // like an unused/orphan sprite slot. Identical across
                                    // US/EU walkers; different content on JP — region-
@@ -445,6 +465,13 @@ export const format = Struct({
     'soundDirectory': BArray(16, sound_sample_entry),  // 64 B; 16× UI sound-effect entries
                                   //   (SND_CONFIRM, SND_FANFARE, SND_BATTLE_START, etc.)
     'soundDataPool': Bytes(528),  // packed note-sequence data referenced by soundDirectory
+})
+
+// 0x8F00..0xB7BD: the current-route asset bundle — RouteInfo struct
+// followed by all the rendered sprites the walker needs to display
+// the walking pokémon, the route's available pokémon, and the route's
+// item names. Refreshed whenever the walker starts a new route.
+const currentRoute = Struct({
     'routeInfo': route_info,
     'areaSprite': Sprite(32, 24),
     'areaNameSprite': Sprite(80, 16),
@@ -455,6 +482,13 @@ export const format = Struct({
     'joinPokeAnimatedSprite': BArray(2, Sprite(64, 48)),
     'routePokeNameSprites': BArray(3, Sprite(80, 16)),
     'itemNameSprites': BArray(10, Sprite(96, 16)),
+})
+
+// 0xB7BE..0xBEFF: received-specials region — bitfield byte at 0xB800
+// flagging which event/special items have been received, plus the
+// raw "special map" data block and the event-stuff (event poke +
+// event item images).
+const receivedSpecials = Struct({
     '_pad_0xB7BE': Bytes(66),    // zero padding before specials bitfield
     'receivedSet': Bytes(1),     // 0xB800: specials bitfield (stamps, special map,
                                  // event poke held, event item held, special route)
@@ -465,10 +499,19 @@ export const format = Struct({
                                  // never been used by any DS-side distribution.
     'eventstuff': Bytes(1156),
     '_pad_0xBEC8': Bytes(56),
-    'specialRoute': special_route,
+})
+
+// 0xCBBC..0xCE7F: our team for trainer-house battles + trailing pads.
+const ourTeam = Struct({
     '_pad_0xCBBC': Bytes(68),
     'team': team_data,
     '_pad_0xCE24': Bytes(0x5C),
+})
+
+// 0xCE80..0xCF0B (140 B): per-session bookkeeping — STARF flag,
+// current-watts mirror, caught pokémon, dowsed items, gifted items,
+// daily step history.
+const bookkeeping = Struct({
     '_pad_0xCE80': Bytes(8),
     'giveStarf': Int8u,
     '_pad_0xCE89': Bytes(1),
@@ -477,10 +520,28 @@ export const format = Struct({
     'dowsedItems': BArray(3, item_data),
     'giftedItems': BArray(10, item_data),
     'stepsHistory': BArray(7, Int32ub),
-    'eventLog': BArray(24, event_log_item),
+})
+
+// 0xDBCC..0xF38B: peer-play state — current peer's team_data at
+// 0xDC00, and a 10-entry "peers we've met" ring at 0xDE24.
+const peerData = Struct({
     '_pad_0xDBCC': Bytes(0x34),
     'peer': team_data,
     'metPeers': BArray(10, team_data),
+})
+
+export const format = Struct({
+    'header': header,
+    'reliableSaves': reliableSaves,
+    'sprites': SpritesSpec,
+    'soundEngine': soundEngine,
+    'currentRoute': currentRoute,
+    'receivedSpecials': receivedSpecials,
+    'specialRoute': special_route,
+    'ourTeam': ourTeam,
+    'bookkeeping': bookkeeping,
+    'eventLog': BArray(24, event_log_item),
+    'peerData': peerData,
     // 0xF38C..0xFFFF (3188 B / 0xC74): tail of the scenario backup
     // region. Conceptually mirrors source 0xAB8C..0xB7FF (the second
     // half of route item-name sprites + their trailing zero padding),
