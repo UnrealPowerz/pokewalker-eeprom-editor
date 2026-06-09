@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pokéwalker Sound Player</title>
+<style>
+  body { font-family: ui-monospace, monospace; margin: 1em; background: #1a1a1a; color: #ddd;
+    max-width: 60em; }
+  h2 { margin-top: 0; }
+  .dropzone { padding: 1.5em; border: 2px dashed #444; border-radius: 8px;
+    text-align: center; color: #888; margin-bottom: 1em; }
+  .dropzone.over { border-color: #6a6; background: #222; color: #ddd; }
+  .controls { margin: 1em 0; padding: 0.8em; background: #222; border-radius: 6px;
+    display: flex; gap: 1em; align-items: center; flex-wrap: wrap; }
+  .controls label { display: inline-flex; gap: 0.4em; align-items: center; }
+  input[type="number"], input[type="range"] {
+    background: #2a2a2a; color: #ddd; border: 1px solid #444; padding: 0.2em 0.4em;
+    font-family: inherit;
+  }
+  input[type="number"] { width: 6em; }
+  input[type="range"] { width: 14em; }
+  button { padding: 0.4em 0.9em; background: #2a2a2a; color: #ddd; border: 1px solid #444;
+    font-family: inherit; cursor: pointer; }
+  button:hover { background: #3a3a3a; }
+  button:active { background: #4a4a4a; }
+  button.playing { background: #4a6a4a; border-color: #6a8; }
+  .entries { display: grid; gap: 0.5em; margin-top: 1em; }
+  .entry { display: grid; grid-template-columns: 4em 1fr auto auto; gap: 0.8em;
+    align-items: center; padding: 0.5em; background: #222; border-radius: 4px; }
+  .name { color: #aaa; }
+  .meta { color: #888; font-size: 0.85em; }
+  .raw { color: #666; font-size: 0.8em; }
+  .raw pre { margin: 0; }
+  details summary { cursor: pointer; padding: 0.3em 0; color: #aaa; }
+  .err { color: #f88; font-size: 0.85em; padding: 0.3em; }
+  .hint { color: #888; font-size: 0.85em; margin: 0.5em 0; }
+</style>
+</head>
+<body>
+  <h2>Pokéwalker Sound Player</h2>
+
+  <div class="dropzone" id="dropzone">
+    Drop an EEPROM .bin file here, or click to choose.<br>
+    <input type="file" id="filein" accept=".bin">
+  </div>
+
+  <div class="controls">
+    <button id="stop">⏹ Stop all</button>
+    <label>Clock: <input type="number" id="clock" value="27000" step="1000"></label>
+    <label>Volume: <input type="range" id="vol" min="0" max="1" step="0.05" value="0.2"></label>
+    <label>Tempo ×: <input type="number" id="tempo" value="1.0" step="0.1" min="0.1" max="4"></label>
+    <label>Wave:
+      <select id="wave">
+        <option value="square" selected>square (chiptune)</option>
+        <option value="triangle">triangle</option>
+        <option value="sawtooth">sawtooth</option>
+        <option value="sine">sine</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="hint">
+    "Clock" calibrates absolute pitch — try 27000 first. Higher = higher pitch.
+    Lowering volume helps with square waves.
+  </div>
+
+  <div id="entries" class="entries"></div>
+
+<script>
+// ---- Pokéwalker sound format constants ----------------------------------
+// Period table for note frequency lookup (from pw_firm src/romdata.c
+// SOUND_PERIOD_TABLE[42]). Smaller value = higher frequency.
+const PERIOD_TABLE = [
+  244, 230, 217, 205, 194, 183, 172, 163, 154, 145, 137, 129,  // notes 0-11
+  122, 115, 108, 102,  97,  91,  86,  81,  77,  72,  68,  64,  // notes 12-23
+   61,  57,  54,  51,  48,  45,  43,  40,  38,  36,  34,  32,  // notes 24-35
+   30,  28,  26,  25,  23,  22                                  // notes 36-41
+];
+const DEFAULT_TEMPO = 0x78;       // sound_header default
+const D_CONSTANT    = 0x14000;    // duration multiplier from drv_sound_update
+const SEPARATE_NOTE_GAP_D = 0x140; // gap subtracted from d for non-tied notes
+const TICKS_PER_SECOND = 100;     // approximation of drv_sound_update call rate
+
+// Control markers (when (byte1 & 0x7F) equals these)
+const TOK_TEMPO   = 0x7B;
+const TOK_REST    = 0x7D;
+const TOK_SCRATCH = 0x7E;   // jump to RAM — treat as end for playback
+const TOK_END     = 0x7F;
+
+// ---- State ----------------------------------------------------------------
+let bytes = null;
+let audioCtx = null;
+let currentPlayback = null;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// ---- Parse one note sequence ---------------------------------------------
+// Returns: { events: [{ type, freq?, durationSec, gapSec? }], parseErr? }
+function parseNoteSequence(data) {
+  const events = [];
+  let i = 0;
+  let tempo = DEFAULT_TEMPO;
+  let safety = 0;
+  while (i + 1 < data.length) {
+    if (++safety > 500) { events.push({ type: 'err', msg: 'too many notes (loop?)'}); break; }
+    const b0 = data[i], b1 = data[i + 1];
+    const code = b1 & 0x7F;
+    const tied = (b1 & 0x80) !== 0;
+
+    if (code === TOK_END) break;
+    if (code === TOK_SCRATCH) break;
+    if (code === TOK_TEMPO) {
+      tempo = b0 || DEFAULT_TEMPO;
+      i += 2;
+      continue;
+    }
+    if (code === TOK_REST) {
+      // Silent note — compute duration using period-table value at index 0x7D (out of bounds!)
+      // The walker reads SOUND_PERIOD_TABLE[0x7D] which is past the array — treat as a
+      // short rest in playback.
+      const dRaw = (D_CONSTANT * b0) / tempo;
+      const periodApprox = PERIOD_TABLE[PERIOD_TABLE.length - 1]; // use highest pitch as divisor
+      const ticks = dRaw / periodApprox;
+      events.push({ type: 'rest', durationSec: ticks / TICKS_PER_SECOND });
+      i += 2;
+      continue;
+    }
+
+    if (code >= PERIOD_TABLE.length) {
+      // Unknown code — log and stop
+      events.push({ type: 'err', msg: `unknown note code 0x${code.toString(16)} at +${i}` });
+      break;
+    }
+
+    const period = PERIOD_TABLE[code];
+    const clock = +document.getElementById('clock').value;
+    const freq = clock / period;
+    const dRaw = (D_CONSTANT * b0) / tempo;
+
+    if (tied) {
+      const ticks = dRaw / period;
+      events.push({ type: 'note', freq, durationSec: ticks / TICKS_PER_SECOND, gapSec: 0 });
+    } else {
+      const ticksGap = SEPARATE_NOTE_GAP_D / period;
+      const ticksNote = (dRaw - SEPARATE_NOTE_GAP_D) / period;
+      events.push({
+        type: 'note',
+        freq,
+        durationSec: Math.max(0, ticksNote) / TICKS_PER_SECOND,
+        gapSec: ticksGap / TICKS_PER_SECOND
+      });
+    }
+    i += 2;
+  }
+  return { events };
+}
+
+// ---- Play a parsed sequence with Web Audio API ----------------------------
+function play(parsed) {
+  initAudio();
+  stopAll();
+
+  const tempoMul = +document.getElementById('tempo').value;
+  const volume = +document.getElementById('vol').value;
+  const waveType = document.getElementById('wave').value;
+
+  const ctx = audioCtx;
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = volume;
+  masterGain.connect(ctx.destination);
+
+  const osc = ctx.createOscillator();
+  osc.type = waveType;
+  const noteGain = ctx.createGain();
+  noteGain.gain.value = 0;  // start silent
+  osc.connect(noteGain);
+  noteGain.connect(masterGain);
+
+  const t0 = ctx.currentTime + 0.05;
+  let t = t0;
+
+  for (const ev of parsed.events) {
+    if (ev.type === 'note') {
+      osc.frequency.setValueAtTime(ev.freq, t);
+      noteGain.gain.setValueAtTime(1, t);
+      const dur = ev.durationSec / tempoMul;
+      const gap = (ev.gapSec || 0) / tempoMul;
+      t += dur;
+      if (gap > 0) {
+        noteGain.gain.setValueAtTime(0, t);
+        t += gap;
+      }
+    } else if (ev.type === 'rest') {
+      noteGain.gain.setValueAtTime(0, t);
+      t += ev.durationSec / tempoMul;
+    }
+  }
+  noteGain.gain.setValueAtTime(0, t);
+
+  osc.start(t0);
+  osc.stop(t + 0.05);
+
+  currentPlayback = { osc, masterGain, endTime: t };
+  setTimeout(() => {
+    if (currentPlayback && currentPlayback.osc === osc) currentPlayback = null;
+  }, (t - ctx.currentTime + 0.1) * 1000);
+}
+
+function stopAll() {
+  if (currentPlayback) {
+    try {
+      const now = audioCtx.currentTime;
+      currentPlayback.masterGain.gain.cancelScheduledValues(now);
+      currentPlayback.masterGain.gain.setValueAtTime(0, now);
+      currentPlayback.osc.stop(now + 0.02);
+    } catch {}
+    currentPlayback = null;
+  }
+}
+
+// ---- Names for the 16 sound entries (from pw_firm gfx_consts.h SND_*) -----
+const SND_NAMES = [
+  'SND_CONFIRM',      'SND_BACK',         'SND_CURSOR',       'SND_RADAR_LOCK',
+  'SND_FAIL',         'SND_DOWSE_HIT',    'SND_ANIM_CUE',     'SND_FANFARE',
+  '(unused 8)',       'SND_GIFT',         'SND_BATTLE_START', 'SND_ATTACK_HIT',
+  'SND_ATTACK_MISS',  'SND_CRIT_HIT',     'SND_FLED',         'SND_BALL_THROW',
+];
+
+// ---- Render UI ------------------------------------------------------------
+function render() {
+  const container = document.getElementById('entries');
+  container.innerHTML = '';
+  if (!bytes) return;
+  if (bytes.length < 0x8EFF) {
+    container.innerHTML = '<div class="err">Dump too small — need at least 0x8EFF bytes</div>';
+    return;
+  }
+
+  const DIRECTORY = 0x8CB0;
+  const POOL      = 0x8CF0;
+
+  for (let i = 0; i < 16; i++) {
+    const entryOff = DIRECTORY + i * 4;
+    // Per editor spec: offset is BE u16
+    const offsetBe = (bytes[entryOff] << 8) | bytes[entryOff + 1];
+    const length   = bytes[entryOff + 2];
+    const checksum = bytes[entryOff + 3];
+
+    const dataStart = POOL + offsetBe;
+    let dataValid = true;
+    let dataBytes = new Uint8Array(0);
+    let parsed = { events: [] };
+    let parseErr = null;
+
+    if (length > 0xC0) {
+      dataValid = false;
+    } else {
+      dataBytes = bytes.subarray(dataStart, dataStart + length);
+      try {
+        parsed = parseNoteSequence(dataBytes);
+      } catch (e) {
+        parseErr = String(e);
+      }
+    }
+
+    const card = document.createElement('div');
+    card.className = 'entry';
+
+    const num = document.createElement('div');
+    num.className = 'name';
+    num.textContent = `#${i}`;
+
+    const info = document.createElement('div');
+    const sndName = SND_NAMES[i] || '?';
+    const meta = `<span class="meta">${sndName} • offset 0x${offsetBe.toString(16)} ` +
+                 `(@0x${dataStart.toString(16)}) • len ${length} • chk 0x${checksum.toString(16)}</span>`;
+    let bodyHtml = meta;
+    if (!dataValid) {
+      bodyHtml += '<div class="err">length exceeds 0xC0 — walker would skip this entry</div>';
+    } else {
+      const hex = Array.from(dataBytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+      const noteCount = parsed.events.filter(e => e.type === 'note').length;
+      bodyHtml += `<div class="meta">${noteCount} notes, ${parsed.events.length} events</div>`;
+      bodyHtml += `<details><summary>raw bytes (${dataBytes.length})</summary><pre class="raw">${hex}</pre></details>`;
+    }
+    if (parseErr) bodyHtml += `<div class="err">${parseErr}</div>`;
+    info.innerHTML = bodyHtml;
+
+    const playBtn = document.createElement('button');
+    playBtn.textContent = '▶ Play';
+    playBtn.disabled = !dataValid;
+    playBtn.addEventListener('click', () => {
+      document.querySelectorAll('button.playing').forEach(b => b.classList.remove('playing'));
+      playBtn.classList.add('playing');
+      play(parsed);
+      // Remove "playing" class after the sequence ends
+      const totalSec = parsed.events.reduce((s, e) =>
+        s + (e.durationSec || 0) + (e.gapSec || 0), 0);
+      setTimeout(() => playBtn.classList.remove('playing'), totalSec * 1000 + 100);
+    });
+
+    card.appendChild(num);
+    card.appendChild(info);
+    card.appendChild(playBtn);
+    container.appendChild(card);
+  }
+}
+
+// ---- Wire up DOM ----------------------------------------------------------
+async function loadFile(file) {
+  const buf = await file.arrayBuffer();
+  bytes = new Uint8Array(buf);
+  document.querySelector('#dropzone').textContent = `Loaded: ${file.name} (${bytes.length} B)`;
+  render();
+}
+
+const dz = document.getElementById('dropzone');
+dz.addEventListener('click', () => document.getElementById('filein').click());
+document.getElementById('filein').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('stop').addEventListener('click', stopAll);
+['clock', 'tempo', 'wave', 'vol'].forEach(id => {
+  document.getElementById(id).addEventListener('input', render);
+});
+</script>
+</body>
+</html>
