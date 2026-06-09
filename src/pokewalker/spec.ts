@@ -426,10 +426,12 @@ export const SpritesSpec = Struct({
 // them as "not real data" to make scrolling past them obvious.
 export const format = Struct({
     'nintendo': FixedLengthString(8),
-    '_pad_0x0008': Bytes(8),     // factory-provisioning constant (same on all walkers
-                                  // including JP — not a per-unit serial). Written by
-                                  // IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE, never read
-                                  // by walker firmware. Likely a Nintendo product code.
+    'productSignature': Bytes(8), // 0x0008..0x000F: fixed 8-byte Nintendo signature
+                                   // (same on every walker checked — US/EU/JP all show
+                                   // `02 01 00 96 05 dc 00 8c`). Not a per-unit serial.
+                                   // Written by IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE,
+                                   // never read by walker firmware. Likely a Nintendo
+                                   // product/hardware-revision code.
     '_pad_0x0010': Bytes(98),    // all 0xFF in every production dump checked
     'numResets': Int8u,
     '_pad_0x0073': Bytes(13),    // all 0xFF in production dumps
