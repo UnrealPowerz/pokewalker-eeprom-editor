@@ -476,42 +476,35 @@ export const format = Struct({
     'padd': Bytes(0x34),
     'peer': team_data,
     'metPeers': BArray(10, team_data),
-    'unused6': Bytes(116),
-    // 0xF400..0xFFFF (0xC00 B): SHARED REGION used either as the
-    // peer-play sprite/name/data trio (during/just-after a sync) OR as
-    // a cache of 8 received-item name images (in steady state).
+    'unused6': Bytes(50),     // 0xF38C..0xF3BD (truncated from 116 — last 66 bytes are
+                              // actually the start of the item cache)
+    // 0xF3BE..0xFFBD (0xC00 B): cache of 8 received-item name images.
+    // User empirically verified that this region decodes cleanly as 8x
+    // 96x16 sprites starting at 0xF3BE, with all 8 holding real item
+    // names (berry names in the tested dump). The format is identical
+    // to EEPROM_ROUTE_ITEM_NAMES (0xA8BE) — 96x16 per item.
     //
-    // User empirically verified that this region decodes as 8x 96x16
-    // sprites = 0xC00 bytes total, with all 8 holding real item names
-    // (berry names in the tested dump). The format is identical to
-    // EEPROM_ROUTE_ITEM_NAMES (0xA8BE) — 96x16 per item.
+    // Important caveat — the cache OVERLAPS regions dmitry documented
+    // as peer-play state and that pw_firm verifies are read for
+    // peer-play purposes:
+    //   0xF400..0xF57F  peer-play poke sprite (gfx.c:822)
+    //   0xF580..0xF6BF  peer-play poke name (gfx.c:502)
+    //   0xF6C0..0xF6F7  PeerPlayData struct (ir_protocol.c)
+    // Item indices 0, 1, and the start of 2 sit on top of these
+    // addresses. Reconciliation: the bytes are MULTI-PURPOSE —
+    // during/just-after a peer-play sync the DS writes peer-play
+    // sprite/name/data into those addresses, overlaying parts of the
+    // item cache; outside peer-play context the cache is intact.
+    // A dump in steady state shows 8 clean item names; one captured
+    // during/just-after a sync may show peer-play data over items 0-2.
     //
-    // Conflict with dmitry's documentation: dmitry described this
-    // region as:
-    //   0xF400..0xF57F  peer-play poke sprite (32x24x2)
-    //   0xF580..0xF6BF  peer-play poke name (80x16)
-    //   0xF6C0..0xF6F7  PeerPlayData struct
-    // and pw_firm code IS verified to read/write at these addresses
-    // for peer-play (see gfx.c:502, gfx.c:822, ir_protocol.c:607).
-    //
-    // Reconciliation: the bytes are MULTI-PURPOSE. During and
-    // immediately after a peer-play sync the DS writes peer-play
-    // sprite + name + PeerPlayData into the first ~0x300 bytes.
-    // Outside of peer-play context the DS provisions item-name image
-    // cache covering the entire region. A dump taken in steady state
-    // shows item cache; one taken during/just-after peer-play shows
-    // peer-play data overlaying items 0-2.
-    //
-    // Why item cache exists: peer-play gifted items go into
+    // Why the cache exists: peer-play gifted items go into
     // EEPROM_PEER_GIFT_ITEMS at 0xCEC8 (10 slots × {u16 item_id, u16
-    // unused}). The item IDs reference items from the LOCAL walker's
-    // current route. When the walker switches routes between walk
-    // sessions, EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets overwritten —
-    // so to keep displaying earlier gifts, the walker (or DS) keeps
-    // route-stable copies of each gifted item's name image here.
-    //
-    // Modeled as 8 × 96x16 for everyday viewing. When loading a dump
-    // captured during peer-play, the first 1-2 entries may show
-    // peer-play sprite/name instead of items.
+    // unused}). The IDs reference items from the LOCAL walker's
+    // current route. When the walker switches routes,
+    // EEPROM_ROUTE_ITEM_NAMES (0xA8BE) gets overwritten — so to keep
+    // displaying earlier gifts, route-stable copies of each gifted
+    // item's name image are kept here.
     'giftedItemNameImageCache': BArray(8, Sprite(96, 16)),
+    'trailingPadding': Bytes(66),  // 0xFFBE..0xFFFF (typically zero in dumps)
 })
