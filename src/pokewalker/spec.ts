@@ -421,16 +421,21 @@ export const SpritesSpec = Struct({
 
 export const format = Struct({
     'nintendo': FixedLengthString(8),
-    'boardInfo': Bytes(8),       // factory-provisioning metadata (serial / mfg date?);
-                                  // written by IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE,
-                                  // never read by walker firmware
-    'unk2': Bytes(98),
+    'boardInfo': Bytes(8),       // factory-provisioning constant (same on all walkers
+                                  // including JP — not a per-unit serial). Written by
+                                  // IR_CMD_FACTORY_TEST + IR_CMD_DEBUG_MODE, never read
+                                  // by walker firmware. Likely a Nintendo product code.
+    'virginRegion1': Bytes(98),  // 0x0010..0x0071: all 0xFF in every production dump
+                                  // checked. Never written by firmware or factory.
     'numResets': Int8u,
-    '???': Bytes(13),
+    'virginRegion2': Bytes(13),  // 0x0073..0x007F: all 0xFF in production dumps.
     'important1': important_data,
     'important2': important_data,
     'sprites': SpritesSpec,
-    '???2': Bytes(64),            // 64-byte gap between sprites and sound directory
+    'orphanSprite': Sprite(32, 8), // 0x8C70..0x8CAF: not referenced by firmware. Looks
+                                   // like an unused/orphan sprite slot. Identical across
+                                   // US/EU walkers; different content on JP — region-
+                                   // specific factory-baked asset that never gets blitted.
     'soundDirectory': BArray(16, sound_sample_entry),  // 64 B; 16× UI sound-effect entries
                                   //   (SND_CONFIRM, SND_FANFARE, SND_BATTLE_START, etc.)
     'soundDataPool': Bytes(528),  // packed note-sequence data referenced by soundDirectory
@@ -444,10 +449,15 @@ export const format = Struct({
     'joinPokeAnimatedSprite': BArray(2, Sprite(64, 48)),
     'routePokeNameSprites': BArray(3, Sprite(80, 16)),
     'itemNameSprites': BArray(10, Sprite(96, 16)),
-    '???3': Bytes(66),
-    'receivedSet': Bytes(1),
+    'paddingPreSpecials': Bytes(66), // 0xB7BE..0xB7FF: zero padding (verified all-zero
+                                     // across production dumps).
+    'receivedSet': Bytes(1),         // 0xB800: specials bitfield (stamps, special map,
+                                     // event poke held, event item held, special route)
     'unused3': Bytes(3),
-    'specialMap': Bytes(576),
+    'specialMap': Bytes(576),        // 0xB804..0xBA43: "special map data" per dmitry.
+                                     // All zero on every production dump we checked —
+                                     // feature exists in firmware but appears to have
+                                     // never been used by any DS-side distribution.
     'eventstuff': Bytes(1156),
     'unused5': Bytes(56),
     'specialRoute': special_route,
