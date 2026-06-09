@@ -417,6 +417,10 @@ export const SpritesSpec = Struct({
     reward_txt: Sprite(96, 16),
     good_job_txt: Sprite(96, 16),
     switch_txt: Sprite(80, 16),
+    orphanSprite: Sprite(32, 8),  // 0x8C70..0x8CAF: not referenced by firmware. Looks
+                                  // like an unused/orphan sprite slot. Identical across
+                                  // US/EU walkers; different content on JP — region-
+                                  // specific factory-baked asset that never gets blitted.
 })
 
 // Top-level format groups fields into semantic regions of the EEPROM.
@@ -454,14 +458,9 @@ const reliableSaves = Struct({
     'important2': important_data,
 })
 
-// 0x8C70..0x8EFF (656 B): UI sound effect engine — orphan sprite of
-// unknown purpose at the start, then the 16-entry sound directory and
-// the note-sequence data pool.
+// 0x8CB0..0x8EFF (592 B): UI sound effect engine — 16-entry sound
+// directory and the note-sequence data pool.
 const soundEngine = Struct({
-    'orphanSprite': Sprite(32, 8), // 0x8C70..0x8CAF: not referenced by firmware. Looks
-                                   // like an unused/orphan sprite slot. Identical across
-                                   // US/EU walkers; different content on JP — region-
-                                   // specific factory-baked asset that never gets blitted.
     'soundDirectory': BArray(16, sound_sample_entry),  // 64 B; 16× UI sound-effect entries
                                   //   (SND_CONFIRM, SND_FANFARE, SND_BATTLE_START, etc.)
     'soundDataPool': Bytes(528),  // packed note-sequence data referenced by soundDirectory
