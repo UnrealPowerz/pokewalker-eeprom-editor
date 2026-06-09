@@ -230,7 +230,7 @@ const special_route = Struct({
 // (Dmitry's article called this region "random checksum descriptor
 // addrs" — that interpretation was incorrect; it's the sound engine.)
 const sound_sample_entry = Struct({
-    'offset': Int16ub,   // BE; offset into soundDataPool
+    'offset': Int16ul,   // LE; offset into soundDataPool
     'length': Int8u,     // sample length in bytes (≤0xC0)
     'checksum': Int8u,   // sum of all sample bytes
 })

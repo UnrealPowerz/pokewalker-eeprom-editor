@@ -46,7 +46,7 @@
 
   <div class="controls">
     <button id="stop">⏹ Stop all</button>
-    <label>Clock: <input type="number" id="clock" value="27000" step="1000"></label>
+    <label>Clock (Hz): <input type="number" id="clock" value="100000" step="5000"></label>
     <label>Volume: <input type="range" id="vol" min="0" max="1" step="0.05" value="0.2"></label>
     <label>Tempo ×: <input type="number" id="tempo" value="1.0" step="0.1" min="0.1" max="4"></label>
     <label>Wave:
@@ -60,8 +60,11 @@
   </div>
 
   <div class="hint">
-    "Clock" calibrates absolute pitch — try 27000 first. Higher = higher pitch.
-    Lowering volume helps with square waves.
+    The clock value controls BOTH pitch and tempo (they're linked — the walker's
+    Timer-W clock determines both). Higher clock = higher pitch AND faster
+    playback. Try 100000 first; adjust until SND_CONFIRM (#0) sounds right
+    (it's a short upward beep ~100-200 ms). Lowering volume helps with square
+    waves.
   </div>
 
   <div id="entries" class="entries"></div>
@@ -79,7 +82,12 @@ const PERIOD_TABLE = [
 const DEFAULT_TEMPO = 0x78;       // sound_header default
 const D_CONSTANT    = 0x14000;    // duration multiplier from drv_sound_update
 const SEPARATE_NOTE_GAP_D = 0x140; // gap subtracted from d for non-tied notes
-const TICKS_PER_SECOND = 100;     // approximation of drv_sound_update call rate
+
+// Duration in seconds = (D_CONSTANT * b0 / tempo) / clock
+// The walker's ticker fires at clock/period rate, so noteDuration_ticks =
+// d / period, but real-time per tick = period/clock, so the period factor
+// cancels out and total seconds = d / clock. This means duration is
+// INDEPENDENT of pitch — Timer-W's clock-counting per cycle is constant.
 
 // Control markers (when (byte1 & 0x7F) equals these)
 const TOK_TEMPO   = 0x7B;
@@ -117,40 +125,36 @@ function parseNoteSequence(data) {
       i += 2;
       continue;
     }
+    const clock = +document.getElementById('clock').value;
+    const dRaw = (D_CONSTANT * b0) / tempo;
+    const totalSec = dRaw / clock;
+    const gapSec   = SEPARATE_NOTE_GAP_D / clock;
+
     if (code === TOK_REST) {
-      // Silent note — compute duration using period-table value at index 0x7D (out of bounds!)
-      // The walker reads SOUND_PERIOD_TABLE[0x7D] which is past the array — treat as a
-      // short rest in playback.
-      const dRaw = (D_CONSTANT * b0) / tempo;
-      const periodApprox = PERIOD_TABLE[PERIOD_TABLE.length - 1]; // use highest pitch as divisor
-      const ticks = dRaw / periodApprox;
-      events.push({ type: 'rest', durationSec: ticks / TICKS_PER_SECOND });
+      events.push({ type: 'rest', durationSec: totalSec });
       i += 2;
       continue;
     }
 
     if (code >= PERIOD_TABLE.length) {
-      // Unknown code — log and stop
-      events.push({ type: 'err', msg: `unknown note code 0x${code.toString(16)} at +${i}` });
-      break;
+      // Unknown code — the walker reads garbage from SOUND_PERIOD_TABLE
+      // past index 41. In practice production sounds don't go past 41,
+      // so flag and skip rather than abort.
+      events.push({ type: 'err', msg: `unknown code 0x${code.toString(16)} at +${i}, skipping` });
+      i += 2;
+      continue;
     }
 
     const period = PERIOD_TABLE[code];
-    const clock = +document.getElementById('clock').value;
     const freq = clock / period;
-    const dRaw = (D_CONSTANT * b0) / tempo;
 
     if (tied) {
-      const ticks = dRaw / period;
-      events.push({ type: 'note', freq, durationSec: ticks / TICKS_PER_SECOND, gapSec: 0 });
+      events.push({ type: 'note', freq, durationSec: totalSec, gapSec: 0 });
     } else {
-      const ticksGap = SEPARATE_NOTE_GAP_D / period;
-      const ticksNote = (dRaw - SEPARATE_NOTE_GAP_D) / period;
       events.push({
-        type: 'note',
-        freq,
-        durationSec: Math.max(0, ticksNote) / TICKS_PER_SECOND,
-        gapSec: ticksGap / TICKS_PER_SECOND
+        type: 'note', freq,
+        durationSec: Math.max(0, totalSec - gapSec),
+        gapSec
       });
     }
     i += 2;
@@ -244,12 +248,13 @@ function render() {
 
   for (let i = 0; i < 16; i++) {
     const entryOff = DIRECTORY + i * 4;
-    // Per editor spec: offset is BE u16
-    const offsetBe = (bytes[entryOff] << 8) | bytes[entryOff + 1];
+    // Offset is u16 LE (despite pw_firm reading it as BE then byte-swapping —
+    // net effect is LE-stored in EEPROM)
+    const offset   = bytes[entryOff] | (bytes[entryOff + 1] << 8);
     const length   = bytes[entryOff + 2];
     const checksum = bytes[entryOff + 3];
 
-    const dataStart = POOL + offsetBe;
+    const dataStart = POOL + offset;
     let dataValid = true;
     let dataBytes = new Uint8Array(0);
     let parsed = { events: [] };
@@ -275,7 +280,7 @@ function render() {
 
     const info = document.createElement('div');
     const sndName = SND_NAMES[i] || '?';
-    const meta = `<span class="meta">${sndName} • offset 0x${offsetBe.toString(16)} ` +
+    const meta = `<span class="meta">${sndName} • offset 0x${offset.toString(16)} ` +
                  `(@0x${dataStart.toString(16)}) • len ${length} • chk 0x${checksum.toString(16)}</span>`;
     let bodyHtml = meta;
     if (!dataValid) {
