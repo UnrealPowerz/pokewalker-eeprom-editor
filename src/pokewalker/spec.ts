@@ -1,30 +1,60 @@
-import { BArray, Bytes, Enum, FixedLengthString, Int16ub, Int16ul, Int32ub, Int32ul, Int8u, Struct } from "../util/bin"
-import { decodePokeString } from "./poke-encoding"
+import { BArray, Bytes, Enum, FixedLengthString, Int16ub, Int16ul, Int32ub, Int32ul, Int8u, Struct, type BinType } from "../util/bin"
+import { decodePokeString, encodePokeString } from "./poke-encoding"
 import { items } from "./types/items"
 import { moves } from "./types/moves"
 import { species } from "./types/species"
 
-const PokeString = (length: number) => ({
-    read(data: DataView, offset: number): string {
-        return decodePokeString(data, offset, length)
-    },
+// A Pokéwalker-encoded variable-length string. The read returns BOTH the
+// decoded text and the original raw bytes — writing back uses the raw bytes
+// directly so factory-padded fields (whose post-terminator bytes can be
+// either 0xFF or 0x00 depending on history) round-trip byte-exact.
+//
+// When the user edits the text, the editor UI re-encodes by:
+//   1. Writing the new text + 0xFFFF terminator
+//   2. Preserving the original trailing bytes from `_raw`
+// (See editPokeString in src/state/eeprom for the helper.)
+export type PokeStringValue = {
+    _data: string;
+    _raw: Uint8Array;
+    _type: 'pokestring';
+}
 
-    length: length * 2
-})
+const PokeString = (length: number): BinType<PokeStringValue> => {
+    const byteLen = length * 2
+    return {
+        read: (data, offset) => ({
+            _data: decodePokeString(data, offset, length),
+            _raw: new Uint8Array(data.buffer.slice(offset, offset + byteLen)),
+            _type: 'pokestring',
+        }),
+        // Write the raw bytes directly. The text field is for display/edit
+        // only; mutations replace the entire `_raw` via the state helper.
+        write: (data, offset, value) => {
+            const dst = new Uint8Array(data.buffer, offset, byteLen)
+            dst.set(value._raw)
+        },
+        length: byteLen,
+    }
+}
 
-export const Sprite = (width: number, height: number) => {
+type SpriteValue = {
+    data: Uint8Array;
+    _width: number;
+    _height: number;
+    _type: 'sprite';
+}
+
+export const Sprite = (width: number, height: number): BinType<SpriteValue> => {
     const bytes = Bytes(width * height / 4)
     return {
-        read(data: DataView, offset: number) {
-            return {
-                data: bytes.read(data, offset),
-                _width: width,
-                _height: height,
-                _type: 'sprite'
-            }
-        },
-    
-        length: bytes.length
+        read: (data, offset) => ({
+            data: bytes.read(data, offset),
+            _width: width,
+            _height: height,
+            _type: 'sprite',
+        }),
+        write: (data, offset, value) => bytes.write(data, offset, value.data),
+        length: bytes.length,
     }
 }
 
