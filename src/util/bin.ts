@@ -102,17 +102,28 @@ type StructResult<S extends { [key: string]: BinType<any> }> = {
     [key in keyof S]: ReturnType<S[key]['read']>;
 };
 
+// Composite BinTypes expose their internal structure via `_fields` (Struct)
+// or `_arrayLength`/`_arrayElem` (BArray) so external code can walk the tree
+// without re-parsing the spec definition. The state store uses this to build
+// a path → offset lookup table once on dump load.
+
+export type StructBinType<R extends Record<string, unknown>> = BinType<R> & {
+    readonly _fields: Record<string, BinType<unknown>>;
+    read(data: DataView, offset?: number): R;
+};
+
+export type BArrayBinType<R> = BinType<R[]> & {
+    readonly _arrayLength: number;
+    readonly _arrayElem: BinType<R>;
+};
+
 export function Struct<S extends { [key: string]: BinType<any> }>(
     spec: S,
-): BinType<StructResult<S>> & {
-    read(data: DataView, offset?: number): StructResult<S>;
-};
+): StructBinType<StructResult<S>>;
 export function Struct<S extends { [key: string]: BinType<any> }, T extends string>(
     spec: S,
     type: T,
-): BinType<StructResult<S> & { _type: T }> & {
-    read(data: DataView, offset?: number): StructResult<S> & { _type: T };
-};
+): StructBinType<StructResult<S> & { _type: T }>;
 export function Struct<
     S extends { [key: string]: BinType<any> },
     T extends string | undefined,
@@ -122,6 +133,8 @@ export function Struct<
         .reduce((a, b) => a + b, 0);
 
     return {
+        _fields: spec as Record<string, BinType<unknown>>,
+
         read(data: DataView, offset: number = 0) {
             const res: Record<string, unknown> = {};
             for (const [name, subspec] of Object.entries(spec)) {
@@ -145,7 +158,9 @@ export function Struct<
     };
 }
 
-export const BArray = <R>(length: number, spec: BinType<R>): BinType<R[]> => ({
+export const BArray = <R>(length: number, spec: BinType<R>): BArrayBinType<R> => ({
+    _arrayLength: length,
+    _arrayElem: spec,
     read: (data, offset) =>
         Array.from({ length }, (_, i) => offset + i * spec.length).map((off) =>
             spec.read(data, off),
