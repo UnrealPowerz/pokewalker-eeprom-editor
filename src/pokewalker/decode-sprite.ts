@@ -1,12 +1,17 @@
-const colors = [
+export const colors = [
     [172, 174, 163, 255],
-    [128, 130, 116, 255],
     [92, 92, 82, 255],
-    [30, 25, 22, 255]
-]
+    [128, 130, 116, 255],
+    [30, 25, 22, 255],
+] as const
+
+export const colorCss = (idx: number): string => {
+    const [r, g, b] = colors[idx & 3]
+    return `rgb(${r}, ${g}, ${b})`
+}
 
 // Credit to DmitryGR for this algo
-const spriteDataToBitmap = (buffer: ArrayBuffer, width: number, height: number): Uint8Array => {
+export const spriteDataToBitmap = (buffer: ArrayBufferLike, width: number, height: number): Uint8Array => {
     const data = new Uint16Array(buffer, 0)
     const res = new Uint8Array(new ArrayBuffer(width * height))
 
@@ -43,7 +48,7 @@ const bitmapToImageData = (data: Uint8Array, width: number, height: number): Ima
     return new ImageData(imgData, width, height)
 }
 
-export const decodeSprite = (buffer: ArrayBuffer, width: number, height: number) => {
+export const decodeSprite = (buffer: ArrayBufferLike, width: number, height: number) => {
     const bitmap = spriteDataToBitmap(buffer, width, height)
     return bitmapToImageData(bitmap, width, height)
 }

@@ -3,14 +3,15 @@
 
 	interface Props {
 		data: Record<string, unknown>;
+		path?: (string | number)[];
 	}
-	let { data }: Props = $props();
+	let { data, path = [] }: Props = $props();
 </script>
 
 <ul>
 	{#each Object.entries(data) as [childName, childValue]}
 		<li>
-			<Entry name={childName} value={childValue} />
+			<Entry name={childName} value={childValue} path={[...path, /^\d+$/.test(childName) ? Number(childName) : childName]} />
 		</li>
 	{/each}
 </ul>

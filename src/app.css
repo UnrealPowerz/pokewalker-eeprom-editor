@@ -6,3 +6,80 @@
   vertical-align: middle;
   font-size: 16px;
 }
+
+/* Field-row alignment. Add class="field-grid" to a container that holds
+ * NumberField/TextField/EnumField/BitField in a column. The container
+ * becomes a 2-track grid (max-content label column, flexible input column)
+ * and each field's outer <label> becomes a subgrid that drops its children
+ * into those tracks. Result: every input in the section starts at the
+ * same X position, regardless of how long each row's label text is.
+ */
+.field-grid {
+  display: grid !important;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 0.5em;
+  align-items: center;
+}
+.field-grid > label {
+  display: grid !important;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 0.3em 0;
+}
+.field-grid > label > .label {
+  min-width: 0 !important;
+  flex: none !important;
+}
+.field-grid > label > input,
+.field-grid > label > .combo {
+  min-width: 0;
+  max-width: none !important;
+  width: auto !important;
+  justify-self: start;
+}
+.field-grid > label > input[type="text"],
+.field-grid > label > .combo {
+  min-width: 16em;
+}
+.field-grid > label > input[type="number"] {
+  min-width: 8em;
+}
+/* In narrow containers (Team pokemon cards, Route catchable / item cards,
+ * Route's walk-fields / route-fields columns that share width with sprites),
+ * the standard input widths are too big — labels would wrap and the grid
+ * misaligns. Shrink the inputs inside any field-grid that lives in a
+ * width-constrained context. */
+.card.field-grid > label > input[type="text"],
+.card.field-grid > label > .combo,
+.item-card.field-grid > label > input[type="text"],
+.item-card.field-grid > label > .combo,
+.walk-fields.field-grid > label > input[type="text"],
+.walk-fields.field-grid > label > .combo,
+.route-fields.field-grid > label > input[type="text"],
+.route-fields.field-grid > label > .combo,
+.editable-stats.field-grid > label > input[type="text"],
+.editable-stats.field-grid > label > .combo {
+  min-width: 0;
+}
+.card.field-grid > label > input[type="number"],
+.item-card.field-grid > label > input[type="number"],
+.walk-fields.field-grid > label > input[type="number"],
+.route-fields.field-grid > label > input[type="number"],
+.editable-stats.field-grid > label > input[type="number"] {
+  min-width: 5em;
+}
+/* Any non-label direct child (headings, hints, readonly rows, etc.) takes
+ * the full row instead of getting tucked into the label column. */
+.field-grid > h2,
+.field-grid > p,
+.field-grid > .hint,
+.field-grid > .readonly-row,
+.field-grid > .caveat,
+.field-grid > .head,
+.field-grid > .item-head,
+.field-grid > .sprite-with-edit,
+.field-grid > details,
+.field-grid > .stat-grid {
+  grid-column: 1 / -1;
+}

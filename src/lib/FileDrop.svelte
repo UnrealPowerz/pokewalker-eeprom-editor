@@ -1,9 +1,10 @@
 <script lang="ts">
 	interface Props {
-		onfile: (bufferPromise: Promise<ArrayBuffer>) => void;
+		onfile: (bufferPromise: Promise<ArrayBuffer>) => Promise<void>;
 	}
 	let { onfile }: Props = $props();
-	let overlay = $state(true);
+	let busy = $state(false);
+	let err = $state<string | null>(null);
 
 	const readFile = (file: File): Promise<ArrayBuffer> =>
 		new Promise((resolve) => {
@@ -23,14 +24,21 @@
 		return [...ev.dataTransfer.files];
 	};
 
-	const fileSelected = (file: File) => {
-		overlay = false;
-		onfile(readFile(file));
+	const fileSelected = async (file: File) => {
+		busy = true;
+		err = null;
+		try {
+			await onfile(readFile(file));
+		} catch (e) {
+			err = String(e);
+			busy = false;
+		}
 	};
 
 	const dragOverHandler = (ev: Event) => ev.preventDefault();
 
 	const dropHandler = (ev: DragEvent) => {
+		if (busy) return;
 		ev.preventDefault();
 		const files = dragEventGetFiles(ev);
 		if (files.length === 1) fileSelected(files[0]);
@@ -42,17 +50,26 @@
 	};
 
 	const loadFromWeb = async () => {
-		overlay = false;
-		const file = await fetch(
-			'https://raw.githubusercontent.com/mamba2410/reverse-pokewalker/master/dumps/bin/64k-full-rom.bin',
-		);
-		onfile(file.arrayBuffer());
+		busy = true;
+		err = null;
+		try {
+			const res = await fetch(
+				'https://raw.githubusercontent.com/mamba2410/reverse-pokewalker/master/dumps/bin/64k-full-rom.bin',
+			);
+			if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+			await onfile(res.arrayBuffer());
+		} catch (e) {
+			err = String(e);
+			busy = false;
+		}
 	};
 </script>
 
-{#if overlay}
-	<div id="overlay">
-		<div id="overlay-box">
+<div id="overlay">
+	<div id="overlay-box">
+		{#if busy}
+			<p>Loading…</p>
+		{:else}
 			<p>Drag &amp; drop EEPROM image here</p>
 			<p>OR</p>
 			<input type="file" onchange={browseFile} />
@@ -63,9 +80,10 @@
 					>(this one)</a
 				>
 			</p>
-		</div>
+			{#if err}<p class="err">Load failed: {err}</p>{/if}
+		{/if}
 	</div>
-{/if}
+</div>
 
 <svelte:body ondrop={dropHandler} ondragover={dragOverHandler} />
 
@@ -86,12 +104,20 @@
 
 	#overlay-box {
 		border: 1px dashed black;
-		height: 300px;
+		min-height: 300px;
 		width: 350px;
+		padding: 1em;
 		border-radius: 5px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		flex-direction: column;
+	}
+	.err {
+		color: #c33;
+		font-size: 0.85em;
+		max-width: 100%;
+		word-break: break-word;
+		text-align: center;
 	}
 </style>

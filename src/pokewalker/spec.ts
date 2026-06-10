@@ -67,14 +67,22 @@ const Item = Enum(Int16ul, items)
 const UniqueIdentitySpec = Bytes(0x28)
 
 const IdentitySpec = Struct({
-    'unk0': Int32ub,
-    'unk1': Int32ub,
-    'unk2': Int16ub,
-    'unk3': Int16ub,
-    'trainerTID': Int16ub,
-    'trainerSID': Int16ub,
-    'uniq': UniqueIdentitySpec,
-    'evtBmp': Bytes(0x10),
+    'id': Int32ub,                   // 0x00 trainer/peer identity
+    'idBackup': Int32ub,             // 0x04 backup (zeroed at session end)
+    'loc': Int16ub,                  // 0x08 location/route code
+    'locBackup': Int16ub,             // 0x0A
+    'trainerTID': Int16ub,           // 0x0C
+    'trainerSID': Int16ub,           // 0x0E
+    'identityPayload': Bytes(22),    // 0x10..0x25 opaque identity bytes — pw_firm
+                                     // comments call this a "walking-poke nickname"
+                                     // but in production dumps it's identical across
+                                     // unrelated walkers and doesn't decode as text.
+                                     // The REAL walking-poke nickname lives in
+                                     // currentRoute.routeInfo.nickname (0x8F00+0x10).
+    'marker46': Int8u,               // 0x26 set to 0x46 by init_peer_identity
+    'at27': Int8u,                   // 0x27 unknown
+    'pokeData': Bytes(0x10),         // 0x28..0x37 poke move/data block
+    'evtBmp': Bytes(0x10),           // 0x38..0x47 event bit-array
     'trainerName': PokeString(8),
     'unk4': Int8u,
     'unk5': Int8u,
@@ -190,26 +198,30 @@ const team_data = Struct({
     'unknownZero': Bytes(0x74),
 })
 
+// Layout verified against game_log_interaction() in pw_firm src/game/peer_log.c.
+// The full entry is 0x88 bytes; offsets correspond to the
+// `*(uintXX_t *)(log_slot + ...)` writes in the firmware.
 const event_log_item = Struct({
-    'eventTime': Int32ub,
-    'unk0': Int32ub,
-    'unk2': Int16ub,
-    'walkingPokeSpecies': PokemonSpecies,
-    'caughtSpecies': PokemonSpecies,
-    'extraData': Int16ul,
-    'remoteTrnrName': PokeString(8),
-    'pokeNick': PokeString(11),
-    'remPokeNick': PokeString(11),
-    'routeImageIdx': Bytes(1),
-    'pokeFriendship': Int8u,
-    'watts': Int16ub,
-    'remoteWatts': Int16ub,
-    'stepCount': Int32ub,
-    'remoteStepCount': Int32ub,
-    'eventType': Int16ul,
-    'genderAndForm': Int8u,
-    'caughtGenderAndForm': Int8u,
-    'padding': Bytes(42)
+    'eventTime': Int32ub,                    // 0x00 RTC seconds at the time of the event
+    'peerInfo1': Int32ub,                    // 0x04 peer TID/SID block (peer events only)
+    'peerInfo2': Int16ub,                    // 0x08 peer payload (peer events only)
+    'walkingPokeSpecies': PokemonSpecies,    // 0x0A walking-poke species
+    'otherPokeSpecies': PokemonSpecies,      // 0x0C caught / event poke species
+    'extraData': Int16ub,                    // 0x0E val_at_0e — item id for dowsing, etc.
+    'peerBlock': Bytes(0x10),                // 0x10..0x1F peer payload (zeroed for catches)
+    'pokeNick': PokeString(11),              // 0x20..0x35 walking-poke nickname
+    'remPokeNick': PokeString(11),           // 0x36..0x4B peer's poke nickname
+    'routeName': PokeString(21),             // 0x4C..0x75 route name (42 bytes)
+    'routeImageIdx': Int8u,                  // 0x76 route_image_idx (or hour marker)
+    'friendship': Int8u,                     // 0x77 walking-poke friendship
+    'sessionRecentSteps': Int16ub,           // 0x78
+    'peerData1': Bytes(2),                   // 0x7A peer-data u16 (peer events)
+    'sessionSteps': Int32ub,                 // 0x7C
+    'peerData2': Bytes(4),                   // 0x80 peer-data u32 (peer events)
+    'eventType': Int8u,                      // 0x84 interaction_type — the canonical event code
+    'walkingPokeFlags': Int8u,               // 0x85 packed gender/ability/form bits for walking poke
+    'otherPokeFlags': Int8u,                 // 0x86 packed gender/ability/form bits for caught/event poke
+    'unk87': Int8u,                          // 0x87
 })
 
 const route_info = Struct({
